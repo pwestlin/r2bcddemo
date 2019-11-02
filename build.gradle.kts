@@ -56,3 +56,7 @@ tasks.withType<KotlinCompile> {
         jvmTarget = "1.8"
     }
 }
+
+springBoot {
+	mainClassName = "nu.westlin.r2dbcdemo.R2dbcdemoApplicationKt"
+}
