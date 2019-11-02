@@ -28,8 +28,6 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType.APPLICATION_JSON
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Repository
-import org.springframework.transaction.reactive.TransactionalOperator
-import org.springframework.transaction.reactive.executeAndAwait
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.awaitBody
@@ -51,8 +49,9 @@ fun main(args: Array<String>) {
 
 data class User(@Id val id: Long, val name: String)
 
+// TODO petves: Return kotlin.Result?
 @Repository
-class UserRepository(private val client: DatabaseClient, private val txOperator: TransactionalOperator) {
+class UserRepository(private val client: DatabaseClient) {
 
     enum class UpdateResult {
         NOT_FOUND, UPDATED
@@ -76,23 +75,18 @@ class UserRepository(private val client: DatabaseClient, private val txOperator:
 
     suspend fun create(user: User): CreateResult {
         // Or should this rather be at the "service level"?
-        return txOperator.executeAndAwait {
-            when (byId(user.id)) {
-                null -> {
-                    client.insert().into<User>().table("User").using(user).await()
-                    CreateResult.CREATED
-                }
-                else -> CreateResult.ALREADY_EXIST
+        return when (byId(user.id)) {
+            null -> {
+                client.insert().into<User>().table("User").using(user).await()
+                CreateResult.CREATED
             }
-        }!!
+            else -> CreateResult.ALREADY_EXIST
+        }
     }
 
     suspend fun update(user: User): UpdateResult {
         // Or should this rather be at the "service level"?
-        val noRows = txOperator.executeAndAwait {
-            client.update().table<User>().using(user).fetch().rowsUpdated().awaitFirstOrNull()
-        }
-        return when (noRows) {
+        return when (val noRows = client.update().table<User>().using(user).fetch().rowsUpdated().awaitFirstOrNull()) {
             1 -> UpdateResult.UPDATED
             0 -> UpdateResult.NOT_FOUND
             else -> throw RuntimeException("update for user $user affected $noRows when exactly 1 row was expected")
@@ -101,10 +95,7 @@ class UserRepository(private val client: DatabaseClient, private val txOperator:
 
     suspend fun delete(id: Long): DeleteResult {
         // Or should this rather be at the "service level"?
-        val noRows = txOperator.executeAndAwait {
-            client.delete().from<User>().matching(where("id").`is`(id)).fetch().rowsUpdated().awaitFirstOrNull()
-        }
-        return when (noRows) {
+        return when (val noRows = client.delete().from<User>().matching(where("id").`is`(id)).fetch().rowsUpdated().awaitFirstOrNull()) {
             1 -> DeleteResult.DELETED
             0 -> DeleteResult.NOT_FOUND
             else -> throw RuntimeException("delete for user $id affected $noRows when exactly 1 row was expected")
