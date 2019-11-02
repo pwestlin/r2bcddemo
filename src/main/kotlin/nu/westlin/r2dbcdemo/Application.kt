@@ -35,7 +35,6 @@ import org.springframework.web.reactive.function.server.bodyAndAwait
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.buildAndAwait
 import org.springframework.web.reactive.function.server.coRouter
-import org.springframework.web.reactive.function.server.json
 import reactor.core.publisher.Flux
 import java.net.URI
 
@@ -122,7 +121,7 @@ class WebConfiguration {
 
 @Component
 class UserHandler(private val userRepository: UserRepository) {
-    suspend fun all(request: ServerRequest) = ServerResponse.ok().json().bodyAndAwait(userRepository.all())
+    suspend fun all(request: ServerRequest) = ServerResponse.ok().bodyAndAwait(userRepository.all())
 
     suspend fun byId(request: ServerRequest): ServerResponse {
         return when (val user = userRepository.byId(request.pathVariable("id").toLong())) {
