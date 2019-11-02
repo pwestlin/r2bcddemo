@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: r2dbc-demo
+
+# R2DBC URL
+r2dbc.url: r2dbc:h2:mem://./testdb
+
+logging:
+  level:
+    nu.westlin.r2dbcdemo: debug
+    root: info
