@@ -2,6 +2,11 @@ spring:
   application:
     name: r2dbc-demo
 
+
+  jackson:
+    serialization:
+      FAIL_ON_EMPTY_BEANS: false
+
 # R2DBC URL
 r2dbc.url: r2dbc:h2:mem://./testdb
 
@@ -9,3 +14,4 @@ logging:
   level:
     nu.westlin.r2dbcdemo: debug
     root: info
+

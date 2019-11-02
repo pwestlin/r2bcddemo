@@ -1,29 +1,43 @@
 package nu.westlin.r2dbcdemo
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
 import io.netty.util.internal.StringUtil
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactories
 import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.reactive.awaitFirstOrNull
+import org.springframework.beans.factory.getBean
 import org.springframework.boot.CommandLineRunner
 import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.ConstructorBinding
 import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.data.annotation.Id
 import org.springframework.data.r2dbc.core.DatabaseClient
 import org.springframework.data.r2dbc.core.asType
 import org.springframework.data.r2dbc.core.await
 import org.springframework.data.r2dbc.core.awaitOneOrNull
 import org.springframework.data.r2dbc.core.flow
+import org.springframework.data.r2dbc.core.from
 import org.springframework.data.r2dbc.core.into
+import org.springframework.data.r2dbc.core.table
+import org.springframework.data.r2dbc.query.Criteria.where
+import org.springframework.http.HttpStatus
+import org.springframework.http.server.reactive.ServerHttpResponse
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.reactive.TransactionalOperator
+import org.springframework.transaction.reactive.executeAndAwait
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -31,16 +45,26 @@ import reactor.core.publisher.Flux
 
 
 @SpringBootApplication
-class R2dbcdemoApplication
+class Application
 
 fun main(args: Array<String>) {
-    runApplication<R2dbcdemoApplication>(*args)
+    val ctx = runApplication<Application>(*args)
+    println("ctx.getBean<ObjectMapper>() = ${ctx.getBean<ObjectMapper>()}")
 }
 
-data class User(val id: Long, val name: String)
+data class User(@Id val id: Long, val name: String)
 
 @Repository
-class UserRepository(private val client: DatabaseClient) {
+class UserRepository(private val client: DatabaseClient, private val txOperator: TransactionalOperator) {
+
+    enum class UpdateResult {
+        NOT_FOUND, UPDATED
+    }
+
+    enum class DeleteResult {
+        NOT_FOUND, DELETED
+    }
+
     fun all(): Flow<User> {
         return client.select().from("User").asType<User>().fetch().flow()
     }
@@ -50,9 +74,33 @@ class UserRepository(private val client: DatabaseClient) {
     }
 
     suspend fun add(user: User) {
-        client.insert().into<User>().table("User").using(user).await()
+        // Or should this rather be at the "service level"?
+        txOperator.executeAndAwait { client.insert().into<User>().table("User").using(user).await() }
     }
 
+    suspend fun update(user: User): UpdateResult {
+        // Or should this rather be at the "service level"?
+        val noRows = txOperator.executeAndAwait {
+            client.update().table<User>().using(user).fetch().rowsUpdated().awaitFirstOrNull()
+        }
+        return when (noRows) {
+            1 -> UpdateResult.UPDATED
+            0 -> UpdateResult.NOT_FOUND
+            else -> throw RuntimeException("update for user $user affected $noRows when exactly 1 row was expected")
+        }
+    }
+
+    suspend fun delete(id: Long): DeleteResult {
+        // Or should this rather be at the "service level"?
+        val noRows = txOperator.executeAndAwait {
+            client.delete().from<User>().matching(where("id").`is`(id)).fetch().rowsUpdated().awaitFirstOrNull()
+        }
+        return when (noRows) {
+            1 -> DeleteResult.DELETED
+            0 -> DeleteResult.NOT_FOUND
+            else -> throw RuntimeException("delete for user $id affected $noRows when exactly 1 row was expected")
+        }
+    }
 }
 
 @RestController
@@ -68,12 +116,32 @@ class UserController(private val userRepository: UserRepository) {
     @PostMapping("")
     suspend fun add(@RequestBody user: User) = userRepository.add(user)
 
+    @PutMapping("")
+    suspend fun update(@RequestBody user: User, response: ServerHttpResponse) {
+        when (userRepository.update(user)) {
+            UserRepository.UpdateResult.UPDATED -> response.statusCode = HttpStatus.NO_CONTENT
+            UserRepository.UpdateResult.NOT_FOUND -> response.statusCode = HttpStatus.NOT_FOUND
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    suspend fun delete(@PathVariable("id") id: Long, response: ServerHttpResponse) {
+        when (userRepository.delete(id)) {
+            UserRepository.DeleteResult.DELETED -> response.statusCode = HttpStatus.OK
+            UserRepository.DeleteResult.NOT_FOUND -> response.statusCode = HttpStatus.NOT_FOUND
+        }
+    }
+
 }
 
 @Configuration
 class WebConfiguration {
     @Bean
-    fun objectMapper() = jacksonObjectMapper()
+    fun jackson2ObjectMapperBuilderCustomizer(): Jackson2ObjectMapperBuilderCustomizer {
+        return Jackson2ObjectMapperBuilderCustomizer {
+            it.featuresToDisable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+        }
+    }
 }
 
 @Configuration
@@ -92,9 +160,10 @@ class DatabaseConfiguration {
         return ConnectionFactories.get(ob.build())
     }
 
+    @Suppress("SpringJavaInjectionPointsAutowiringInspection")
     @Bean
-    fun initDatabase2(cf: ConnectionFactory) = CommandLineRunner {
-        Flux.from<Connection>(cf.create())
+    fun initDatabase2(connectionFactory: ConnectionFactory) = CommandLineRunner {
+        Flux.from<Connection>(connectionFactory.create())
             .flatMap<io.r2dbc.spi.Result> { c ->
                 Flux.from<io.r2dbc.spi.Result>(c.createBatch()
                     .add("drop table if exists User")
