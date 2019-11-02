@@ -1,6 +1,5 @@
 package nu.westlin.r2dbcdemo
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import io.netty.util.internal.StringUtil
 import io.r2dbc.spi.Connection
@@ -9,7 +8,6 @@ import io.r2dbc.spi.ConnectionFactory
 import io.r2dbc.spi.ConnectionFactoryOptions
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.reactive.awaitFirstOrNull
-import org.springframework.beans.factory.getBean
 import org.springframework.boot.CommandLineRunner
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer
@@ -48,8 +46,7 @@ import reactor.core.publisher.Flux
 class Application
 
 fun main(args: Array<String>) {
-    val ctx = runApplication<Application>(*args)
-    println("ctx.getBean<ObjectMapper>() = ${ctx.getBean<ObjectMapper>()}")
+    runApplication<Application>(*args)
 }
 
 data class User(@Id val id: Long, val name: String)
@@ -65,6 +62,10 @@ class UserRepository(private val client: DatabaseClient, private val txOperator:
         NOT_FOUND, DELETED
     }
 
+    enum class CreateResult {
+        CREATED, ALREADY_EXIST
+    }
+
     fun all(): Flow<User> {
         return client.select().from("User").asType<User>().fetch().flow()
     }
@@ -73,9 +74,17 @@ class UserRepository(private val client: DatabaseClient, private val txOperator:
         return client.execute("SELECT * FROM User WHERE id = :id").bind("id", id).asType<User>().fetch().awaitOneOrNull()
     }
 
-    suspend fun add(user: User) {
+    suspend fun create(user: User): CreateResult {
         // Or should this rather be at the "service level"?
-        txOperator.executeAndAwait { client.insert().into<User>().table("User").using(user).await() }
+        return txOperator.executeAndAwait {
+            when (byId(user.id)) {
+                null -> {
+                    client.insert().into<User>().table("User").using(user).await()
+                    CreateResult.CREATED
+                }
+                else -> CreateResult.ALREADY_EXIST
+            }
+        }!!
     }
 
     suspend fun update(user: User): UpdateResult {
@@ -111,10 +120,19 @@ class UserController(private val userRepository: UserRepository) {
     fun all(): Flow<User> = userRepository.all()
 
     @GetMapping("/{id}")
-    suspend fun byId(@PathVariable("id") id: Long): User? = userRepository.byId(id)
+    suspend fun byId(@PathVariable("id") id: Long, response: ServerHttpResponse): User? {
+        return (userRepository.byId(id)).also {
+            if (it == null) response.statusCode = HttpStatus.NOT_FOUND
+        }
+    }
 
     @PostMapping("")
-    suspend fun add(@RequestBody user: User) = userRepository.add(user)
+    suspend fun create(@RequestBody user: User, response: ServerHttpResponse) {
+        when (userRepository.create(user)) {
+            UserRepository.CreateResult.CREATED -> response.statusCode = HttpStatus.CREATED
+            UserRepository.CreateResult.ALREADY_EXIST -> response.statusCode = HttpStatus.CONFLICT
+        }
+    }
 
     @PutMapping("")
     suspend fun update(@RequestBody user: User, response: ServerHttpResponse) {
