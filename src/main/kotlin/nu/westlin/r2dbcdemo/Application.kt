@@ -1,6 +1,5 @@
 package nu.westlin.r2dbcdemo
 
-import com.fasterxml.jackson.databind.SerializationFeature
 import io.netty.util.internal.StringUtil
 import io.r2dbc.spi.Connection
 import io.r2dbc.spi.ConnectionFactories
@@ -10,7 +9,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.reactive.awaitFirstOrNull
 import org.springframework.boot.CommandLineRunner
 import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.ConstructorBinding
 import org.springframework.boot.runApplication
@@ -27,19 +25,21 @@ import org.springframework.data.r2dbc.core.into
 import org.springframework.data.r2dbc.core.table
 import org.springframework.data.r2dbc.query.Criteria.where
 import org.springframework.http.HttpStatus
-import org.springframework.http.server.reactive.ServerHttpResponse
+import org.springframework.http.MediaType.APPLICATION_JSON
+import org.springframework.stereotype.Component
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.reactive.TransactionalOperator
 import org.springframework.transaction.reactive.executeAndAwait
-import org.springframework.web.bind.annotation.DeleteMapping
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.PutMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.reactive.function.server.ServerRequest
+import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.reactive.function.server.awaitBody
+import org.springframework.web.reactive.function.server.bodyAndAwait
+import org.springframework.web.reactive.function.server.bodyValueAndAwait
+import org.springframework.web.reactive.function.server.buildAndAwait
+import org.springframework.web.reactive.function.server.coRouter
+import org.springframework.web.reactive.function.server.json
 import reactor.core.publisher.Flux
+import java.net.URI
 
 
 @SpringBootApplication
@@ -112,52 +112,53 @@ class UserRepository(private val client: DatabaseClient, private val txOperator:
     }
 }
 
-@RestController
-@RequestMapping("/users")
-class UserController(private val userRepository: UserRepository) {
-
-    @GetMapping("")
-    fun all(): Flow<User> = userRepository.all()
-
-    @GetMapping("/{id}")
-    suspend fun byId(@PathVariable("id") id: Long, response: ServerHttpResponse): User? {
-        return (userRepository.byId(id)).also {
-            if (it == null) response.statusCode = HttpStatus.NOT_FOUND
-        }
-    }
-
-    @PostMapping("")
-    suspend fun create(@RequestBody user: User, response: ServerHttpResponse) {
-        when (userRepository.create(user)) {
-            UserRepository.CreateResult.CREATED -> response.statusCode = HttpStatus.CREATED
-            UserRepository.CreateResult.ALREADY_EXIST -> response.statusCode = HttpStatus.CONFLICT
-        }
-    }
-
-    @PutMapping("")
-    suspend fun update(@RequestBody user: User, response: ServerHttpResponse) {
-        when (userRepository.update(user)) {
-            UserRepository.UpdateResult.UPDATED -> response.statusCode = HttpStatus.NO_CONTENT
-            UserRepository.UpdateResult.NOT_FOUND -> response.statusCode = HttpStatus.NOT_FOUND
-        }
-    }
-
-    @DeleteMapping("/{id}")
-    suspend fun delete(@PathVariable("id") id: Long, response: ServerHttpResponse) {
-        when (userRepository.delete(id)) {
-            UserRepository.DeleteResult.DELETED -> response.statusCode = HttpStatus.OK
-            UserRepository.DeleteResult.NOT_FOUND -> response.statusCode = HttpStatus.NOT_FOUND
-        }
-    }
-
-}
-
 @Configuration
 class WebConfiguration {
+
     @Bean
-    fun jackson2ObjectMapperBuilderCustomizer(): Jackson2ObjectMapperBuilderCustomizer {
-        return Jackson2ObjectMapperBuilderCustomizer {
-            it.featuresToDisable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+    fun routes(userHandler: UserHandler) = coRouter {
+        accept(APPLICATION_JSON).nest {
+            "/users".nest {
+                GET("", userHandler::all)
+                GET("/{id}", userHandler::byId)
+                POST("", userHandler::create)
+                PUT("", userHandler::update)
+                DELETE("/{id}", userHandler::delete)
+            }
+        }
+    }
+}
+
+@Component
+class UserHandler(private val userRepository: UserRepository) {
+    suspend fun all(request: ServerRequest) = ServerResponse.ok().json().bodyAndAwait(userRepository.all())
+
+    suspend fun byId(request: ServerRequest): ServerResponse {
+        return when (val user = userRepository.byId(request.pathVariable("id").toLong())) {
+            null -> ServerResponse.notFound().buildAndAwait()
+            else -> ServerResponse.ok().bodyValueAndAwait(user)
+        }
+    }
+
+    suspend fun create(request: ServerRequest): ServerResponse {
+        return when (userRepository.create(request.awaitBody())) {
+            // TODO petves: Correct URI
+            UserRepository.CreateResult.CREATED -> ServerResponse.created(URI("http:/localhost:8080")).buildAndAwait()
+            UserRepository.CreateResult.ALREADY_EXIST -> ServerResponse.status(HttpStatus.CONFLICT).buildAndAwait()
+        }
+    }
+
+    suspend fun update(request: ServerRequest): ServerResponse {
+        return when (userRepository.update(request.awaitBody())) {
+            UserRepository.UpdateResult.UPDATED -> ServerResponse.noContent().buildAndAwait()
+            UserRepository.UpdateResult.NOT_FOUND -> ServerResponse.notFound().buildAndAwait()
+        }
+    }
+
+    suspend fun delete(request: ServerRequest): ServerResponse {
+        return when (userRepository.delete(request.pathVariable("id").toLong())) {
+            UserRepository.DeleteResult.DELETED -> ServerResponse.ok().buildAndAwait()
+            UserRepository.DeleteResult.NOT_FOUND -> ServerResponse.notFound().buildAndAwait()
         }
     }
 }
