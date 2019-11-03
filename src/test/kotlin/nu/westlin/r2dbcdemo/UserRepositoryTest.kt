@@ -38,21 +38,21 @@ internal class UserRepositoryTest {
     @Test
     fun `all users`() {
         executeAndRollBack {
-            assertThat(repository.all().toList()).containsExactlyInAnyOrder(mimi, mickey)
+            assertThat(repository.all().getOrThrow().toList()).containsExactlyInAnyOrder(mimi, mickey)
         }
     }
 
     @Test
     fun `one user`() {
         executeAndRollBack {
-            assertThat(repository.byId(mimi.id)).isEqualTo(mimi)
+            assertThat(repository.byId(mimi.id).getOrThrow()).isEqualTo(mimi)
         }
     }
 
     @Test
     fun `one user that does not exist`() {
         executeAndRollBack {
-            assertThat(repository.byId(-1)).isNull()
+            assertThat(repository.byId(-1).getOrThrow()).isNull()
         }
     }
 
@@ -61,7 +61,7 @@ internal class UserRepositoryTest {
         executeAndRollBack {
             val user = User(3, "Donald")
             assertThat(repository.create(user)).isEqualTo(CreateResult.CREATED)
-            assertThat(repository.byId(user.id)).isEqualTo(user)
+            assertThat(repository.byId(user.id).getOrThrow()).isEqualTo(user)
         }
     }
 
@@ -77,7 +77,7 @@ internal class UserRepositoryTest {
         executeAndRollBack {
             val user = mimi.copy(name = "Mimiiii")
             assertThat(repository.update(user)).isEqualTo(UpdateResult.UPDATED)
-            assertThat(repository.byId(user.id)).isEqualTo(user)
+            assertThat(repository.byId(user.id).getOrThrow()).isEqualTo(user)
         }
     }
 
@@ -86,7 +86,7 @@ internal class UserRepositoryTest {
         executeAndRollBack {
             val user = User(-1, "Foo")
             assertThat(repository.update(user)).isEqualTo(UpdateResult.NOT_FOUND)
-            assertThat(repository.byId(user.id)).isNull()
+            assertThat(repository.byId(user.id).getOrThrow()).isNull()
         }
     }
 
@@ -94,7 +94,7 @@ internal class UserRepositoryTest {
     fun `delete a user`() {
         executeAndRollBack {
             assertThat(repository.delete(mimi.id)).isEqualTo(DeleteResult.DELETED)
-            assertThat(repository.byId(mimi.id)).isNull()
+            assertThat(repository.byId(mimi.id).getOrThrow()).isNull()
         }
     }
 

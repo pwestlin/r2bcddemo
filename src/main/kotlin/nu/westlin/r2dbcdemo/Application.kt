@@ -64,17 +64,17 @@ class UserRepository(private val client: DatabaseClient) {
         CREATED, ALREADY_EXIST
     }
 
-    fun all(): Flow<User> {
-        return client.select().from("User").asType<User>().fetch().flow()
+    fun all(): Result<Flow<User>> {
+        return Result.runCatching { client.select().from("User").asType<User>().fetch().flow() }
     }
 
-    suspend fun byId(id: Long): User? {
-        return client.execute("SELECT * FROM User WHERE id = :id").bind("id", id).asType<User>().fetch().awaitOneOrNull()
+    suspend fun byId(id: Long): Result<User?> {
+        return Result.runCatching { client.execute("SELECT * FROM User WHERE id = :id").bind("id", id).asType<User>().fetch().awaitOneOrNull() }
     }
 
     suspend fun create(user: User): CreateResult {
-        // Or should this rather be at the "service level"?
-        return when (byId(user.id)) {
+        // TODO petves: .getOrThrow() -> functional
+        return when (byId(user.id).getOrThrow()) {
             null -> {
                 client.insert().into<User>().table("User").using(user).await()
                 CreateResult.CREATED
@@ -121,10 +121,20 @@ class WebConfiguration {
 
 @Component
 class UserHandler(private val userRepository: UserRepository) {
-    suspend fun all(request: ServerRequest) = ServerResponse.ok().bodyAndAwait(userRepository.all())
+    suspend fun all(request: ServerRequest): ServerResponse {
+        val flow = userRepository.all().getOrThrow()
+        return ServerResponse.ok().bodyAndAwait(flow)
+/*
+        return userRepository.all().fold(
+            { ServerResponse.ok().bodyAndAwait(it) }
+            , { ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).buildAndAwait() }
+        )
+*/
+    }
 
     suspend fun byId(request: ServerRequest): ServerResponse {
-        return when (val user = userRepository.byId(request.pathVariable("id").toLong())) {
+        // TODO petves: getOrThrow()
+        return when (val user = userRepository.byId(request.pathVariable("id").toLong()).getOrThrow()) {
             null -> ServerResponse.notFound().buildAndAwait()
             else -> ServerResponse.ok().bodyValueAndAwait(user)
         }

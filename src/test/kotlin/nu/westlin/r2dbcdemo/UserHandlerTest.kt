@@ -34,7 +34,8 @@ internal class UserHandlerTest {
     @Test
     fun `all users`() {
         runBlocking {
-            coEvery { userRepository.all() } returns listOf(user1, user2).asFlow()
+            // TODO petves: Inline classes (I.E. Result) does not work with MockK... :/
+            coEvery { userRepository.all() } returns Result.success(listOf(user1, user2).asFlow())
 
             client.get().uri("/users").accept(MediaType.APPLICATION_JSON)
                 .exchange()
@@ -48,7 +49,7 @@ internal class UserHandlerTest {
     fun `a user by id`() {
         runBlocking {
             val user = user3
-            coEvery { userRepository.byId(user.id) } returns user3
+            coEvery { userRepository.byId(user.id) } returns Result.success(user3)
 
             client.get().uri("/users/{id}", user.id).accept(MediaType.APPLICATION_JSON)
                 .exchange()
@@ -62,7 +63,7 @@ internal class UserHandlerTest {
     fun `a user by id that does not exist`() {
         runBlocking {
             val user = user3
-            coEvery { userRepository.byId(user.id) } returns null
+            coEvery { userRepository.byId(user.id) } returns Result.success(null)
 
             client.get().uri("/users/{id}", user.id).accept(MediaType.APPLICATION_JSON)
                 .exchange()
