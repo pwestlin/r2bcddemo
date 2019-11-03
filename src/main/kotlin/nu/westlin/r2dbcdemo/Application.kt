@@ -136,7 +136,7 @@ class UserHandler(private val userRepository: UserRepository) {
             UserRepository.CreateResult.CREATED -> {
                 ServerResponse.created(uri).buildAndAwait()
             }
-            UserRepository.CreateResult.ALREADY_EXIST -> ServerResponse.status(HttpStatus.CONFLICT).header("Location", uri.toString()).buildAndAwait()
+            UserRepository.CreateResult.ALREADY_EXIST -> ServerResponse.status(HttpStatus.CONFLICT).header("Location", uri.toASCIIString()).buildAndAwait()
         }
     }
 

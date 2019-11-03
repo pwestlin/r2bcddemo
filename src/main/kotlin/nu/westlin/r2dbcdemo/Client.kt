@@ -24,15 +24,20 @@ fun main() {
 }
 
 private suspend fun createUser(client: WebClient, user: User) {
-    val response = client.post().uri("/").contentType(MediaType.APPLICATION_JSON).bodyValue(user).awaitExchange()
+    val response = client.post().uri("").contentType(MediaType.APPLICATION_JSON).bodyValue(user).awaitExchange()
     log { "response = ${response.statusCode()}" }
     log { "response = ${response.rawStatusCode()}" }
-    check(response.statusCode() == HttpStatus.OK) { "Wrong status: ${response.statusCode()}"}
+    check(response.statusCode() == HttpStatus.CREATED) { "Wrong status: ${response.statusCode()}" }
     log { "Created user: $user" }
+    log { "headers = ${response.headers().header("Location")}" }
+    val location = response.headers().header("Location").first()
+    log { "Created user lookup by location header: $location" }
+    val createdUser = client.get().uri(location).accept(MediaType.APPLICATION_JSON).awaitExchange().awaitBodyOrNull<User>()
+    log { "Created ny location: $createdUser" }
 }
 
 private suspend fun allUsers(client: WebClient) {
-    val users = client.get().uri("/").accept(MediaType.APPLICATION_JSON)
+    val users = client.get().uri("").accept(MediaType.APPLICATION_JSON)
         .awaitExchange().awaitBody<List<User>>()
     log { "users = $users" }
 }
