@@ -83,6 +83,7 @@ internal class UserHandlerTest {
                 .exchange()
                 .expectStatus().isCreated
                 .expectHeader().doesNotExist("Accept")
+                .expectHeader().valueEquals("Location", "/users/${user.id}")
                 .expectBody().isEmpty
         }
     }
@@ -98,6 +99,7 @@ internal class UserHandlerTest {
                 .exchange()
                 .expectStatus().isEqualTo(HttpStatus.CONFLICT)
                 .expectHeader().doesNotExist("Accept")
+                .expectHeader().valueEquals("Location", "/users/${user.id}")
                 .expectBody().isEmpty
         }
     }

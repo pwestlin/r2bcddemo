@@ -14,7 +14,7 @@ import org.springframework.data.r2dbc.core.DatabaseClient
 import org.springframework.transaction.reactive.TransactionalOperator
 import org.springframework.transaction.reactive.executeAndAwait
 
-// TODO petves: databasetest slice
+// TODO pwestlin: databasetest slice
 @SpringBootTest
 internal class UserRepositoryTest {
 

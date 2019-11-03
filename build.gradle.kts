@@ -11,7 +11,7 @@ group = "nu.westlin"
 version = "0.0.1-SNAPSHOT"
 java.sourceCompatibility = JavaVersion.VERSION_1_8
 
-val developmentOnly by configurations.creating
+val developmentOnly: Configuration by configurations.creating
 configurations {
     runtimeClasspath {
         extendsFrom(developmentOnly)
@@ -50,10 +50,6 @@ dependencyManagement {
     }
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
-
 tasks.withType<KotlinCompile> {
     kotlinOptions {
         freeCompilerArgs = listOf("-Xjsr305=strict")
@@ -62,5 +58,28 @@ tasks.withType<KotlinCompile> {
 }
 
 springBoot {
-	mainClassName = "nu.westlin.r2dbcdemo.R2dbcdemoApplicationKt"
+    mainClassName = "nu.westlin.r2dbcdemo.R2dbcdemoApplicationKt"
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+
+    include("**/*Test.class")
+
+    addTestListener(object : TestListener {
+        override fun beforeTest(p0: TestDescriptor?) = Unit
+        override fun beforeSuite(p0: TestDescriptor?) = Unit
+        override fun afterTest(desc: TestDescriptor, result: TestResult) = Unit
+        override fun afterSuite(desc: TestDescriptor, result: TestResult) {
+            printResults(desc, result)
+        }
+    })
+}
+
+fun printResults(desc: TestDescriptor, result: TestResult) {
+    val output = "${desc.name} results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} successes, ${result.failedTestCount} failures, ${result.skippedTestCount} skipped)"
+    val startItem = "|  "
+    val endItem = "  |"
+    val repeatLength = startItem.length + output.length + endItem.length
+    println("\n" + ("-".repeat(repeatLength)) + "\n" + startItem + output + endItem + "\n" + ("-".repeat(repeatLength)))
 }

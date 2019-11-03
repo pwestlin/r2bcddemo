@@ -48,7 +48,6 @@ fun main(args: Array<String>) {
 
 data class User(@Id val id: Long, val name: String)
 
-// TODO petves: Return kotlin.Result?
 @Repository
 class UserRepository(private val client: DatabaseClient) {
 
@@ -131,10 +130,13 @@ class UserHandler(private val userRepository: UserRepository) {
     }
 
     suspend fun create(request: ServerRequest): ServerResponse {
-        return when (userRepository.create(request.awaitBody())) {
-            // TODO petves: Correct URI
-            UserRepository.CreateResult.CREATED -> ServerResponse.created(URI("http:/localhost:8080")).buildAndAwait()
-            UserRepository.CreateResult.ALREADY_EXIST -> ServerResponse.status(HttpStatus.CONFLICT).buildAndAwait()
+        val user = request.awaitBody<User>()
+        val uri = URI("${request.uri()}/${user.id}")
+        return when (userRepository.create(user)) {
+            UserRepository.CreateResult.CREATED -> {
+                ServerResponse.created(uri).buildAndAwait()
+            }
+            UserRepository.CreateResult.ALREADY_EXIST -> ServerResponse.status(HttpStatus.CONFLICT).header("Location", uri.toString()).buildAndAwait()
         }
     }
 
