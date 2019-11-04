@@ -173,7 +173,7 @@ class DatabaseConfiguration {
 
     @Suppress("SpringJavaInjectionPointsAutowiringInspection")
     @Bean
-    fun initDatabase2(connectionFactory: ConnectionFactory) = CommandLineRunner {
+    fun initDatabase(connectionFactory: ConnectionFactory) = CommandLineRunner {
         Flux.from<Connection>(connectionFactory.create())
             .flatMap<io.r2dbc.spi.Result> { c ->
                 Flux.from<io.r2dbc.spi.Result>(c.createBatch()
